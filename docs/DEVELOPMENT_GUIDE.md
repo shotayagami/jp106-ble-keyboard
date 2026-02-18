@@ -1,4 +1,4 @@
-# Raspberry Pi Pico 2W 開発ガイド
+# JP106 BLE キーボード 開発ガイド
 
 ## 目次
 
@@ -6,8 +6,8 @@
 2. [プロジェクト構造](#プロジェクト構造)
 3. [ビルド方法](#ビルド方法)
 4. [フラッシュ方法](#フラッシュ方法)
-5. [開発の進め方](#開発の進め方)
-6. [開発で気をつける点](#開発で気をつける点)
+5. [カスタマイズ](#カスタマイズ)
+6. [アーキテクチャ概要](#アーキテクチャ概要)
 7. [デバッグ方法](#デバッグ方法)
 8. [トラブルシューティング](#トラブルシューティング)
 
@@ -15,59 +15,69 @@
 
 ## 環境セットアップ
 
-開発環境のセットアップについては、詳細な手順を [インストールガイド](INSTALLATION_GUIDE.md) に記載しています。
+詳細な手順は [インストールガイド](INSTALLATION_GUIDE.md) を参照。
 
 ### 必要なツール
 
-1. **CMake** (バージョン 3.13以上) - ビルドシステム
-2. **ARM GCC コンパイラ** - クロスコンパイラ
-3. **Python 3** (バージョン 3.6以上) - Pico SDKのビルドツール用
-4. **Git** - SDKのダウンロード用
-5. **Raspberry Pi Pico SDK** - 開発SDK
+- **CMake** (3.13以上)
+- **ARM GCC クロスコンパイラ** (`arm-none-eabi-gcc`)
+- **Python 3** (3.6以上) - Pico SDKのビルドツール用
+- **Git**
+- **Raspberry Pi Pico SDK** (2.x)
+- **Ninja** (推奨ビルドジェネレータ)
 
-### 環境変数の設定
+### 環境変数
 
-Pico SDKのパスを環境変数に設定する必要があります：
-
-**Windows (PowerShell):**
-```powershell
-$env:PICO_SDK_PATH = "C:\path\to\pico-sdk"
-```
-
-**Linux/macOS:**
 ```bash
+# Windows (PowerShell)
+$env:PICO_SDK_PATH = "C:\path\to\pico-sdk"
+
+# Linux/macOS
 export PICO_SDK_PATH=/path/to/pico-sdk
 ```
-
-詳細なインストール手順と環境変数の設定方法は [インストールガイド](INSTALLATION_GUIDE.md) を参照してください。
 
 ---
 
 ## プロジェクト構造
 
-```
-RaspberryPiPico2Wproj/
-├── src/                    # メインソースコード
-│   └── main.c             # エントリーポイント
-├── include/                # ヘッダーファイル
-│   └── project_config.h   # プロジェクト設定
-├── docs/                   # ドキュメント
-│   └── DEVELOPMENT_GUIDE.md  # このファイル
-├── build/                  # ビルド出力（.gitignoreに含める）
-├── CMakeLists.txt          # CMakeビルド設定
-├── pico_sdk_import.cmake   # Pico SDKインポート設定
-├── .gitignore              # Git除外設定
-├── .vscode/                # VS Code設定
-│   └── settings.json       # エディタ設定
-└── README.md               # プロジェクト概要
+```text
+KeyBoard/
+├── CMakeLists.txt              # ビルド設定 (ソース/ライブラリ/PIO/GATT)
+├── pico_sdk_import.cmake       # Pico SDK インポート (変更不要)
+├── hog_keyboard.gatt           # BLE GATT データベース定義
+├── ws2812.pio                  # WS2812B PIO プログラム
+├── include/
+│   ├── project_config.h        # プロジェクト全体の設定・定数
+│   ├── hid_keycodes.h          # USB HID キーコード定義
+│   ├── keymap.h                # キーマップ API
+│   ├── keyboard_matrix.h       # マトリクススキャン API
+│   ├── ble_hid.h               # BLE HID API (キーボード+マウス)
+│   ├── device_slot.h           # デバイススロット管理 API
+│   ├── ws2812_led.h            # WS2812B LED ドライバ API
+│   ├── trackball.h             # I2C トラックボール API
+│   └── btstack_config.h        # BTstack コンパイル時設定
+├── src/
+│   ├── main.c                  # メインループ
+│   ├── keymap.c                # JIS 106キー配列テーブル
+│   ├── keyboard_matrix.c       # マトリクススキャン + デバウンス
+│   ├── ble_hid.c               # BLE HID サービス実装
+│   ├── device_slot.c           # 3デバイススロット + Flash保存
+│   ├── ws2812_led.c            # WS2812B PIO ドライバ
+│   └── trackball.c             # I2C トラックボールドライバ
+├── docs/
+│   ├── WIRING_GUIDE.md         # 配線ガイド
+│   ├── DEVELOPMENT_GUIDE.md    # このファイル
+│   └── INSTALLATION_GUIDE.md   # 環境構築ガイド
+└── .gitignore
 ```
 
-### ディレクトリの役割
+### 自動生成ファイル (build/ 内)
 
-- **src/**: メインのソースコード（.cファイル）
-- **include/**: ヘッダーファイル（.hファイル）
-- **docs/**: プロジェクトドキュメント
-- **build/**: CMakeのビルド出力（自動生成、Git管理外）
+| ファイル | 生成元 | 用途 |
+| -------- | ------ | ---- |
+| `hog_keyboard.h` | `hog_keyboard.gatt` | GATT プロファイルデータ |
+| `ws2812.pio.h` | `ws2812.pio` | PIO プログラムバイナリ |
+| `jp106_ble_keyboard.uf2` | ソース全体 | Pico 書き込み用ファームウェア |
 
 ---
 
@@ -76,322 +86,313 @@ RaspberryPiPico2Wproj/
 ### 初回ビルド
 
 ```bash
-# ビルドディレクトリを作成
-mkdir build
-cd build
-
-# CMakeでビルド設定を生成
-cmake ..
-
-# ビルド実行
-make
-# または
-cmake --build .
+mkdir build && cd build
+cmake -G Ninja ..
+ninja
 ```
 
 ### 再ビルド
 
 ```bash
 cd build
-make
+ninja
 ```
 
 ### クリーンビルド
 
 ```bash
 cd build
-rm -rf *
-cmake ..
-make
+rm -rf * && cmake -G Ninja .. && ninja
 ```
 
-### ビルド成果物
-
-ビルドが成功すると、`build/`ディレクトリに以下が生成されます：
-
-- `プロジェクト名.uf2`: Picoにフラッシュするファイル
-- `プロジェクト名.elf`: ELF実行ファイル
-- `プロジェクト名.bin`: バイナリファイル
-- `プロジェクト名.dis`: 逆アセンブルファイル（デバッグ用）
+成功すると `build/jp106_ble_keyboard.uf2` が生成される。
 
 ---
 
 ## フラッシュ方法
 
-### BOOTSELモードでのフラッシュ
-
-1. **Pico 2WをBOOTSELモードで起動**
-   - BOOTSELボタンを押しながらUSBケーブルを接続
-   - または、リセットボタンを押しながらBOOTSELボタンを押す
-
-2. **USBドライブとして認識される**
-   - Windows: `RPI-RP2`というドライブが表示される
-   - Linux/macOS: `/media/RPI-RP2/`にマウントされる
-
-3. **UF2ファイルをコピー**
-   ```bash
-   # Windows
-   copy build\プロジェクト名.uf2 R:\
-
-   # Linux/macOS
-   cp build/プロジェクト名.uf2 /media/RPI-RP2/
-   ```
-
-4. **自動的にフラッシュされる**
-   - コピーが完了すると自動的にフラッシュが開始される
-   - フラッシュ完了後、Picoが自動的にリセットされる
-
-### 注意点
-
-- BOOTSELモードでは、Picoは通常のプログラムを実行しない
-- フラッシュ後は自動的に通常モードで起動する
-- フラッシュ中はUSBケーブルを抜かないこと
+1. Pico 2W の **BOOTSEL** ボタンを押しながら USB 接続
+2. `RPI-RP2` ドライブが表示される
+3. `build/jp106_ble_keyboard.uf2` をドライブにコピー
+4. 自動的にリセットされ、ファームウェアが起動
 
 ---
 
-## 開発の進め方
+## カスタマイズ
 
-### 1. プロジェクトの初期化
+### BLE デバイス名の変更
 
-```bash
-# プロジェクトディレクトリを作成
-mkdir RaspberryPiPico2Wproj
-cd RaspberryPiPico2Wproj
+ペアリング画面に表示されるデバイス名は **3箇所** で定義されている。
+全て同じ文字列に揃える必要がある。
 
-# ディレクトリ構造を作成
-mkdir src include build docs
+#### 1. プロジェクト設定ヘッダ
+
+ファイル: `include/project_config.h`
+
+```c
+#define DEVICE_NAME          "JP106 Keyboard"   // ← ここを変更
 ```
 
-### 2. CMakeLists.txtの作成
+#### 2. GATT データベース
 
-プロジェクトのルートに`CMakeLists.txt`を作成し、Pico SDKを設定します。
+ファイル: `hog_keyboard.gatt`
 
-### 3. ソースコードの作成
-
-`src/main.c`にメインコードを記述します。
-
-### 4. ビルドとテスト
-
-```bash
-# ビルド
-cd build
-cmake ..
-make
-
-# フラッシュ
-# UF2ファイルをPicoにコピー
+```text
+CHARACTERISTIC, GAP_DEVICE_NAME, READ, "JP106 Keyboard"
+                                        ^^^^^^^^^^^^^^ ← ここを変更
 ```
 
-### 5. デバッグと改善
+#### 3. アドバタイジングデータ (バイト列)
 
-- シリアル出力でデバッグ情報を確認
-- 必要に応じてログを追加
-- 段階的に機能を追加
+ファイル: `src/ble_hid.c` の `adv_data[]` 配列
 
-### 開発フロー
-
+```c
+static const uint8_t adv_data[] = {
+    ...
+    /* Complete Local Name */
+    0x0F, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
+    'J', 'P', '1', '0', '6', ' ', 'K', 'e', 'y', 'b', 'o', 'a', 'r', 'd',
+    ...
+};
 ```
-コード記述 → ビルド → フラッシュ → テスト → デバッグ → 改善
-     ↑                                                      ↓
-     └──────────────────────────────────────────────────────┘
+
+**変更手順:**
+
+1. 新しいデバイス名の文字数を数える
+2. 先頭のバイト = **文字数 + 1** (タイプバイト分) に更新
+3. 文字列を1文字ずつカンマ区切りで列挙
+
+**例: `"MyKB"` (4文字) に変更する場合:**
+
+```c
+/* 先頭バイト: 4 + 1 = 0x05 */
+0x05, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
+'M', 'y', 'K', 'B',
+```
+
+**例: `"PicoBoard 106"` (13文字) に変更する場合:**
+
+```c
+/* 先頭バイト: 13 + 1 = 0x0E */
+0x0E, BLUETOOTH_DATA_TYPE_COMPLETE_LOCAL_NAME,
+'P', 'i', 'c', 'o', 'B', 'o', 'a', 'r', 'd', ' ', '1', '0', '6',
+```
+
+> **注意**: BLE アドバタイジングパケットの最大長は 31 バイト。
+> 他のフィールド (Flags: 3, Appearance: 4, Service UUID: 4 = 計11バイト) を差し引くと、
+> デバイス名は最大 **18文字** まで使用可能。
+
+---
+
+### キーマップの変更
+
+ファイル: `src/keymap.c`
+
+8×14 マトリクスのキーコード対応テーブル。
+行(Row)と列(Col)の交点に HID キーコードを設定する。
+
+```c
+static const uint8_t keymap[MATRIX_ROWS][MATRIX_COLS] = {
+    /* Row 0: Col0    Col1    Col2    ... */
+    {  KEY_GRAVE, KEY_1, KEY_2, ... },
+    ...
+};
+```
+
+キーコード定数は `include/hid_keycodes.h` を参照。
+キーを入れ替える場合は、対応するマトリクス位置の定数を変更するだけでよい。
+
+---
+
+### デバウンス時間の変更
+
+ファイル: `include/keyboard_matrix.h`
+
+```c
+#define DEBOUNCE_MS  20    // デフォルト 20ms
+```
+
+- チャタリングが多い場合: 30-50ms に増加
+- レスポンスを重視する場合: 5-10ms に短縮 (キースイッチの品質に依存)
+
+---
+
+### トラックボール感度の変更
+
+ファイル: `include/project_config.h`
+
+```c
+#define TRACKBALL_SENSITIVITY  2    // 感度倍率 (1-4)
+```
+
+- `1`: 低感度 (精密操作向け)
+- `2`: 標準 (デフォルト)
+- `3-4`: 高感度 (大画面向け)
+
+---
+
+### スロットLED色の変更
+
+ファイル: `src/device_slot.c`
+
+```c
+static const uint8_t slot_colors[MAX_DEVICE_SLOTS][3] = {
+    {  0, 32,  0 },   /* スロット0: 緑  (R, G, B) */
+    {  0,  0, 32 },   /* スロット1: 青 */
+    { 32,  0,  0 },   /* スロット2: 赤 */
+};
+```
+
+RGB値 (0-255) を変更して任意の色に設定可能。
+値が大きいほど明るくなる。通常は 16-64 程度で十分。
+
+---
+
+### デバイススロット数の変更
+
+ファイル: `include/hid_keycodes.h`
+
+```c
+#define MAX_DEVICE_SLOTS  3    // 最大3台 (1-3)
+```
+
+スロット数を減らす場合は `ws2812_led.h` の `WS2812_NUM_LEDS` も合わせて変更すること。
+Fn+数字キーの対応も `keyboard_matrix.c` の `matrix_get_fn_slot_action()` で調整する。
+
+---
+
+### デバッグ出力の有効/無効
+
+ファイル: `include/project_config.h`
+
+```c
+#define DEBUG_ENABLED 1    // 1=有効, 0=無効
+```
+
+プロダクション (本番) では `0` に設定し、USB シリアル出力も無効化する:
+
+ファイル: `CMakeLists.txt`
+
+```cmake
+pico_enable_stdio_usb(${PROJECT_NAME} 0)    # 0 に変更
 ```
 
 ---
 
-## 開発で気をつける点
+### バッテリー監視間隔の変更
 
-### 1. メモリ管理
-
-- **RAM容量**: Pico 2Wは264KBのRAMを持つ
-- **スタックオーバーフロー**: 大きな配列は静的メモリ（グローバル変数）に配置
-- **ヒープ使用**: `malloc()`は使用可能だが、メモリリークに注意
-- **推奨**: 可能な限り静的メモリを使用
+ファイル: `include/project_config.h`
 
 ```c
-// 推奨: 静的メモリ
-static uint8_t buffer[1024];
+#define BATTERY_CHECK_INTERVAL_MS  60000    // 60秒ごと
+```
 
-// 注意: スタックオーバーフローの可能性
-void function() {
-    uint8_t buffer[1024];  // 大きな配列は避ける
+短くするとバッテリー残量の更新が早くなるが、消費電力がわずかに増加する。
+
+---
+
+## アーキテクチャ概要
+
+### メインループ
+
+```text
+while (true) {
+    1. ble_hid_poll()          ← BLE イベント処理 (CYW43 ポーリング)
+    2. matrix_scan()           ← キーマトリクス全行スキャン + デバウンス
+    3. Fn+1/2/3 検出           ← スロット切替処理
+    4. HID キーボードレポート   ← 変化があれば NKRO/Boot レポート送信
+    5. トラックボール読み取り   ← I2C デルタ取得 → マウスレポート送信
+    6. バッテリー監視           ← 60秒ごとに ADC 読み取り
+    7. LED 更新                ← オンボード LED (接続状態表示)
+    8. sleep_us(500)           ← ~1kHz スキャンレート
 }
 ```
 
-### 2. 割り込み処理
+### BLE 送信フロー制御
 
-- **割り込みハンドラは短く**: 長時間の処理は避ける
-- **共有変数の保護**: 割り込みとメインループで共有する変数は`volatile`を使用
-- **クリティカルセクション**: `__disable_irq()`/`__enable_irq()`で保護
-
-```c
-volatile bool flag = false;
-
-void irq_handler() {
-    flag = true;  // 短い処理のみ
-}
-
-int main() {
-    while (1) {
-        if (flag) {
-            // メインループで処理
-            flag = false;
-        }
-    }
-}
+```text
+send_report() 呼び出し
+    │
+    ├── can_send_now == true → 即座に送信、can_send_now = false
+    │
+    └── can_send_now == false → バッファに保存
+                                  → CAN_SEND_NOW イベント要求
+                                  → イベント発生時にバッファから送信
 ```
 
-### 3. タイミングと遅延
+キーボードレポートがマウスレポートより優先される。
 
-- **busy_wait**: 正確なタイミングが必要な場合
-- **sleep_ms/sleep_us**: 通常の遅延
-- **タイマー**: 定期的な処理にはタイマーを使用
+### コンポジット HID レポート
 
-```c
-#include "pico/time.h"
+| Report ID | デバイス | サイズ | フォーマット |
+| --------- | -------- | ------ | ------------ |
+| 1 | キーボード (NKRO) | 22 bytes | modifier(1) + bitmap(21) |
+| 2 | マウス | 4 bytes | buttons(1) + X(1) + Y(1) + wheel(1) |
+| - | キーボード (Boot) | 8 bytes | modifier(1) + reserved(1) + keys(6) |
 
-// 正確な遅延（マイクロ秒）
-sleep_us(1000);
+Report Protocol モード (通常): Report ID 付きで送信。
+Boot Protocol モード (BIOS): キーボードのみ、Report ID なし。
 
-// ミリ秒単位の遅延
-sleep_ms(100);
+### Flash ストレージ
 
-// タイマーを使用した定期的な処理
-absolute_time_t timeout = make_timeout_time_ms(1000);
+デバイススロット情報は Flash の最終 4KB セクタに保存。
+
+```text
+Flash 4MB:
+  0x000000 - 0x3FEFFF : ファームウェア
+  0x3FF000 - 0x3FFFFF : スロットデータ (4KB)
+
+スロットデータ構造:
+  magic      (4B) : "SLOT" (0x534C4F54)
+  active     (1B) : アクティブスロット番号
+  reserved   (3B)
+  slot[0]    (8B) : BD_ADDR(6) + addr_type(1) + paired(1)
+  slot[1]    (8B)
+  slot[2]    (8B)
 ```
-
-### 4. GPIO操作
-
-- **初期化**: `gpio_init()`で初期化
-- **方向設定**: `gpio_set_dir()`で入力/出力を設定
-- **プルアップ/プルダウン**: 必要に応じて設定
-- **デバウンス**: スイッチ入力にはデバウンス処理を実装
-
-```c
-#include "hardware/gpio.h"
-
-gpio_init(PIN);
-gpio_set_dir(PIN, GPIO_OUT);
-gpio_put(PIN, 1);
-
-// 入力の場合
-gpio_set_dir(PIN, GPIO_IN);
-gpio_pull_up(PIN);
-```
-
-### 5. シリアル通信（UART）
-
-- **デバッグ出力**: `stdio`を使用（USBシリアル）
-- **ボーレート**: 115200が標準
-- **バッファリング**: 必要に応じてバッファを実装
-
-```c
-#include "pico/stdio.h"
-
-stdio_init_all();
-
-printf("Hello, Pico 2W!\n");
-```
-
-### 6. WiFi機能（Pico 2W特有）
-
-- **初期化**: `cyw43_arch_init()`でWiFiを初期化
-- **電力管理**: WiFiは電力消費が大きいため、不要な時はオフにする
-- **非同期処理**: WiFi操作は時間がかかるため、非同期処理を検討
-
-```c
-#include "pico/cyw43_arch.h"
-
-cyw43_arch_init();
-cyw43_arch_enable_sta_mode();
-```
-
-### 7. エラーハンドリング
-
-- **戻り値のチェック**: 関数の戻り値を必ず確認
-- **エラーログ**: エラー時は適切なログを出力
-- **リセット**: 致命的なエラー時は`reset()`を呼ぶ
-
-```c
-if (gpio_init(PIN) < 0) {
-    printf("GPIO initialization failed\n");
-    return -1;
-}
-```
-
-### 8. パフォーマンス最適化
-
-- **コンパイラ最適化**: `-O2`または`-O3`を使用
-- **インライン関数**: 小さな関数は`inline`で宣言
-- **不要な浮動小数点演算**: 可能な限り整数演算を使用
-- **キャッシュ効率**: メモリアクセスパターンを考慮
-
-### 9. 電源管理
-
-- **スリープモード**: 不要な時はスリープモードを使用
-- **周辺機器の無効化**: 使用しない周辺機器は無効化
-- **クロック速度**: 必要に応じてクロック速度を調整
-
-### 10. デバッグのベストプラクティス
-
-- **printfデバッグ**: シリアル出力で状態を確認
-- **LEDインジケーター**: 状態表示にLEDを使用
-- **ログレベル**: デバッグ/情報/警告/エラーのレベル分け
-- **アサーション**: `assert()`で前提条件をチェック
 
 ---
 
 ## デバッグ方法
 
-### 1. シリアル出力デバッグ
+### USB シリアルデバッグ
 
-```c
-#include "pico/stdio.h"
+ファームウェア書き込み後、USB シリアルポートが表示される。
 
-stdio_init_all();
-printf("Debug: value = %d\n", value);
+```bash
+# Windows: Tera Term または PuTTY で COM ポートに接続
+# Linux/macOS:
+screen /dev/ttyACM0 115200
 ```
 
-### 2. LEDインジケーター
+`DEBUG_PRINT` マクロで出力されるログ例:
 
-```c
-#include "hardware/gpio.h"
-
-#define LED_PIN 25
-
-gpio_init(LED_PIN);
-gpio_set_dir(LED_PIN, GPIO_OUT);
-
-// 点滅で状態を表示
-gpio_put(LED_PIN, 1);
-sleep_ms(100);
-gpio_put(LED_PIN, 0);
+```text
+[DEBUG] Flash: slots loaded (active=0)
+[DEBUG] Trackball: detected on I2C (addr=0x0A)
+[DEBUG] BLE HID initialized (composite: keyboard + mouse)
+[DEBUG] BLE advertising started (slot 0)
+[DEBUG] JP106 BLE Keyboard started (slot 0, trackball=yes)
+[DEBUG] BLE pairing: Just Works confirmed
+[DEBUG] BLE pairing complete (success)
+[DEBUG] BLE protocol mode: Report (NKRO+Mouse)
 ```
 
-### 3. GDBデバッグ（SWD経由）
+### オンボード LED
 
-- **OpenOCD**: デバッグプローブ経由でデバッグ
-- **VS Code統合**: VS Codeのデバッグ機能を使用
-- **ブレークポイント**: コード実行を一時停止
+| パターン | 意味 |
+| -------- | ---- |
+| 常時点灯 | BLE 接続中 |
+| 1Hz 点滅 | アドバタイジング中 (未接続) |
 
-### 4. ログシステムの実装
+### WS2812B スロット LED
 
-```c
-#define LOG_LEVEL_DEBUG 0
-#define LOG_LEVEL_INFO  1
-#define LOG_LEVEL_WARN  2
-#define LOG_LEVEL_ERROR 3
-
-#define CURRENT_LOG_LEVEL LOG_LEVEL_DEBUG
-
-#define LOG(level, fmt, ...) \
-    do { \
-        if (level >= CURRENT_LOG_LEVEL) { \
-            printf("[%s] " fmt "\n", #level, ##__VA_ARGS__); \
-        } \
-    } while(0)
-
-LOG(LOG_LEVEL_DEBUG, "Debug message: %d", value);
-```
+| パターン | 意味 |
+| -------- | ---- |
+| 緑点灯 | スロット 1 アクティブ |
+| 青点灯 | スロット 2 アクティブ |
+| 赤点灯 | スロット 3 アクティブ |
+| 色点滅 | スロット切替中 |
 
 ---
 
@@ -399,50 +400,39 @@ LOG(LOG_LEVEL_DEBUG, "Debug message: %d", value);
 
 ### ビルドエラー
 
-**問題**: `pico_sdk_import.cmake`が見つからない
-- **解決**: `PICO_SDK_PATH`環境変数を確認
+| エラー | 原因 | 解決策 |
+| ------ | ---- | ------ |
+| `pico_sdk_import.cmake not found` | SDK パス未設定 | `PICO_SDK_PATH` 環境変数を確認 |
+| `arm-none-eabi-gcc not found` | コンパイラ未インストール | ARM GCC をインストールし PATH に追加 |
+| `hog_keyboard.h not found` | GATT ヘッダ未生成 | クリーンビルドを実行 |
+| `ws2812.pio.h not found` | PIO ヘッダ未生成 | クリーンビルドを実行 |
+| BTstack 関連エラー | SDK バージョン不一致 | Pico SDK 2.x を使用しているか確認 |
 
-**問題**: コンパイラが見つからない
-- **解決**: ARM GCCのパスを`PATH`に追加
+### BLE 接続の問題
 
-**問題**: CMakeのバージョンが古い
-- **解決**: CMake 3.13以上にアップグレード
+| 症状 | 原因 | 解決策 |
+| ---- | ---- | ------ |
+| デバイスが見つからない | アドバタイジング未開始 | シリアルログで `advertising started` を確認 |
+| ペアリングできない | ボンディング失敗 | ホスト側で既存ペアリングを削除して再試行 |
+| キー入力が送信されない | プロトコルモード不一致 | シリアルログで protocol mode を確認 |
+| トラックボールが動かない | Boot Protocol モード | OS 起動後に Report Protocol に切り替わるのを待つ |
 
-### フラッシュエラー
+### ハードウェアの問題
 
-**問題**: UF2ファイルをコピーしても動作しない
-- **解決**: BOOTSELモードで正しく認識されているか確認
-- **解決**: UF2ファイルが正しく生成されているか確認
-
-**問題**: プログラムが起動しない
-- **解決**: シリアル出力でエラーメッセージを確認
-- **解決**: ハードウェア接続を確認
-
-### 実行時エラー
-
-**問題**: メモリ不足
-- **解決**: 大きな配列を静的メモリに移動
-- **解決**: 不要な変数を削除
-
-**問題**: GPIOが動作しない
-- **解決**: ピン番号が正しいか確認
-- **解決**: 初期化が正しく行われているか確認
-
-**問題**: WiFiが接続できない
-- **解決**: SSIDとパスワードが正しいか確認
-- **解決**: WiFi初期化が完了しているか確認
+| 症状 | 原因 | 解決策 |
+| ---- | ---- | ------ |
+| キーが反応しない | ダイオードの向き間違い | カソード (帯) が Row 側か確認 |
+| ゴーストキー | ダイオード未実装 | 全キーに 1N4148 を実装 |
+| トラックボール未検出 | I2C 配線ミス | SDA/SCL の接続、プルアップ抵抗を確認 |
+| WS2812B 点灯しない | データ線の接続 | GP22 → LED0 の DIN に接続されているか確認 |
 
 ---
 
 ## 参考リソース
 
-- [Raspberry Pi Pico C/C++ SDK Documentation](https://datasheets.raspberrypi.com/pico/raspberry-pi-pico-c-sdk.pdf)
-- [Pico SDK Examples](https://github.com/raspberrypi/pico-examples)
-- [Pico SDK API Reference](https://www.raspberrypi.com/documentation/pico-sdk/)
 - [Raspberry Pi Pico 2W Datasheet](https://datasheets.raspberrypi.com/pico/pico2w-datasheet.pdf)
-
----
-
-## 更新履歴
-
-- 2026-02-18: 初版作成
+- [Pico C/C++ SDK Documentation](https://datasheets.raspberrypi.com/pico/raspberry-pi-pico-c-sdk.pdf)
+- [Pico SDK API Reference](https://www.raspberrypi.com/documentation/pico-sdk/)
+- [BTstack Documentation](https://bluekitchen-gmbh.com/btstack/)
+- [USB HID Usage Tables](https://usb.org/document-library/hid-usage-tables-15)
+- [Pimoroni Trackball Breakout](https://shop.pimoroni.com/products/trackball-breakout)
