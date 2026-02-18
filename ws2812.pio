@@ -1,0 +1,46 @@
+;
+; WS2812B (NeoPixel) LED ドライバ PIOプログラム
+;
+; 800kHz シリアルプロトコル:
+;   T0H=0.35us, T0L=0.8us (bit 0)
+;   T1H=0.7us,  T1L=0.6us (bit 1)
+;   Reset: >50us LOW
+;
+
+.program ws2812
+.side_set 1
+
+.define public T1 2
+.define public T2 5
+.define public T3 3
+
+.wrap_target
+bitloop:
+    out x, 1       side 0 [T3 - 1] ; Side-set LOW, shift out next bit
+    jmp !x do_zero side 1 [T1 - 1] ; Branch on bit=0/1, raise HIGH
+    jmp bitloop    side 1 [T2 - 1] ; Bit=1: stay HIGH for T1+T2
+do_zero:
+    nop            side 0 [T2 - 1] ; Bit=0: pull LOW for T2
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void ws2812_program_init(PIO pio, uint sm, uint offset,
+                                        uint pin, float freq) {
+    pio_gpio_init(pio, pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+
+    pio_sm_config c = ws2812_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_out_shift(&c, false, true, 24);  /* GRB, 24bit, auto-pull */
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    int cycles_per_bit = ws2812_T1 + ws2812_T2 + ws2812_T3;
+    float div = clock_get_hz(clk_sys) / (freq * cycles_per_bit);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

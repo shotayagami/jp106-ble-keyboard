@@ -1,0 +1,23 @@
+// hog_keyboard.gatt
+// GATT Database: JP106 BLE HID Keyboard
+//
+// BTstack の pico_btstack_make_gatt_header() でビルド時にCヘッダに変換される
+
+// GAP Service (必須)
+PRIMARY_SERVICE, GAP_SERVICE
+CHARACTERISTIC, GAP_DEVICE_NAME, READ, "JP106 Keyboard"
+// Appearance: 0x03C1 = HID Keyboard
+CHARACTERISTIC, GAP_APPEARANCE, READ, C1 03
+
+// GATT Service (データベースハッシュ用)
+PRIMARY_SERVICE, GATT_SERVICE
+CHARACTERISTIC, GATT_DATABASE_HASH, READ,
+
+// Battery Service (バッテリーレベル通知)
+#import <battery_service.gatt>
+
+// Device Information Service (デバイス情報)
+#import <device_information_service.gatt>
+
+// HID Service (HIDデバイス - キーボード)
+#import <hids.gatt>
