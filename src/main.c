@@ -128,9 +128,14 @@ int main(void) {
             trackball_read(&tb_state);
             if (tb_state.changed && ble_hid_is_connected()) {
                 uint8_t buttons = tb_state.button ? MOUSE_BTN_LEFT : 0;
-                int8_t dx = tb_state.delta_x * TRACKBALL_SENSITIVITY;
-                int8_t dy = tb_state.delta_y * TRACKBALL_SENSITIVITY;
-                ble_hid_send_mouse_report(buttons, dx, dy, 0);
+                /* int16_tで計算してint8_t範囲にクランプ (オーバーフロー防止) */
+                int16_t dx_raw = (int16_t)tb_state.delta_x * TRACKBALL_SENSITIVITY;
+                int16_t dy_raw = (int16_t)tb_state.delta_y * TRACKBALL_SENSITIVITY;
+                if (dx_raw > 127) dx_raw = 127;
+                if (dx_raw < -127) dx_raw = -127;
+                if (dy_raw > 127) dy_raw = 127;
+                if (dy_raw < -127) dy_raw = -127;
+                ble_hid_send_mouse_report(buttons, (int8_t)dx_raw, (int8_t)dy_raw, 0);
             }
         }
 

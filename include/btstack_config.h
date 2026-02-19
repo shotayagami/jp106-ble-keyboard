@@ -13,7 +13,7 @@
  * ログ設定
  * ============================================================ */
 #define ENABLE_LOG_ERROR
-#ifdef DEBUG_ENABLED
+#if defined(DEBUG_ENABLED) && DEBUG_ENABLED
 #define ENABLE_LOG_INFO
 #endif
 #define ENABLE_PRINTF_HEXDUMP

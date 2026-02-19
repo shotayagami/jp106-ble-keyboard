@@ -146,6 +146,10 @@ static bool can_send_now = false;
 static uint8_t battery_level = 100;
 static bool btstack_ready = false;
 
+/* 接続中ピアアドレスのキャッシュ (ペアリング完了時に使用) */
+static bd_addr_t peer_addr;
+static uint8_t peer_addr_type;
+
 /* キーボード送信バッファ (優先度: 高) */
 #define MAX_KB_REPORT_SIZE  (1 + NKRO_REPORT_SIZE)  /* Report ID + NKRO */
 static uint8_t pending_kb_report[MAX_KB_REPORT_SIZE];
@@ -248,6 +252,19 @@ static void packet_handler(uint8_t packet_type, uint16_t channel,
             }
             break;
 
+        case HCI_EVENT_LE_META:
+            if (hci_event_le_meta_get_subevent_code(packet) ==
+                HCI_SUBEVENT_LE_CONNECTION_COMPLETE) {
+                /* 接続完了: ピアアドレスをキャッシュ (ペアリング保存用) */
+                peer_addr_type = hci_subevent_le_connection_complete_get_peer_address_type(packet);
+                hci_subevent_le_connection_complete_get_peer_address(packet, peer_addr);
+                DEBUG_PRINT("BLE connected (peer=%02X:%02X:%02X:%02X:%02X:%02X type=%d)",
+                            peer_addr[0], peer_addr[1], peer_addr[2],
+                            peer_addr[3], peer_addr[4], peer_addr[5],
+                            peer_addr_type);
+            }
+            break;
+
         case HCI_EVENT_DISCONNECTION_COMPLETE:
             con_handle = HCI_CON_HANDLE_INVALID;
             can_send_now = false;
@@ -288,16 +305,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel,
         case SM_EVENT_PAIRING_COMPLETE: {
             uint8_t status = sm_event_pairing_complete_get_status(packet);
             if (status == ERROR_CODE_SUCCESS) {
-                /* ペアリング成功: 接続先アドレスをスロットに保存 */
-                hci_con_handle_t handle = sm_event_pairing_complete_get_con_handle(packet);
-                bd_addr_t peer_addr;
-                gap_le_get_own_address(/* unused */ NULL, peer_addr);
-
-                /* 接続ハンドルからピアアドレスを取得 */
-                hci_connection_t *conn = hci_connection_for_handle(handle);
-                if (conn) {
-                    device_slot_save_pairing(conn->address, conn->address_type);
-                }
+                /* ペアリング成功: キャッシュ済みピアアドレスをスロットに保存 */
+                device_slot_save_pairing(peer_addr, peer_addr_type);
                 DEBUG_PRINT("BLE pairing complete (success)");
             } else {
                 DEBUG_PRINT("BLE pairing failed (status=%d)", status);

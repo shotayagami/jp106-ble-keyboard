@@ -7,23 +7,8 @@
 #define PROJECT_CONFIG_H
 
 /* ============================================================
- * デバイス情報
+ * バッテリー監視GPIO
  * ============================================================ */
-#define DEVICE_NAME          "JP106 Keyboard"
-#define MANUFACTURER_NAME    "DIY"
-#define DEVICE_PNP_VERSION   0x0001
-
-/* ============================================================
- * マトリクス設定
- * ============================================================ */
-#define ROW_PIN_START        0    /* GP0-GP7 */
-#define COL_PIN_START        8    /* GP8-GP21 */
-#define DEBOUNCE_DELAY_MS    20
-
-/* ============================================================
- * 補助GPIO
- * ============================================================ */
-#define WS2812B_LED_PIN      22   /* WS2812B データピン (スロットLED×3) */
 #define BATTERY_ADC_PIN      28   /* バッテリー電圧監視 (ADC2) */
 #define BATTERY_ADC_CHANNEL  2
 

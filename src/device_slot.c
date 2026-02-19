@@ -84,10 +84,14 @@ static void flash_save_slots(void) {
     }
 
     /* Flash書込み: 割り込み無効化 → セクタ消去 → 書込み → 割り込み復帰 */
+    /* flash_range_program() は FLASH_PAGE_SIZE (256バイト) の倍数が必要 */
+    uint8_t page_buf[FLASH_PAGE_SIZE];
+    memset(page_buf, 0xFF, sizeof(page_buf));
+    memcpy(page_buf, &data, sizeof(flash_slot_data_t));
+
     uint32_t ints = save_and_disable_interrupts();
     flash_range_erase(FLASH_SLOT_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(FLASH_SLOT_OFFSET, (const uint8_t *)&data,
-                        sizeof(flash_slot_data_t));
+    flash_range_program(FLASH_SLOT_OFFSET, page_buf, FLASH_PAGE_SIZE);
     restore_interrupts(ints);
 
     DEBUG_PRINT("Flash: slots saved (active=%d)", active_slot);

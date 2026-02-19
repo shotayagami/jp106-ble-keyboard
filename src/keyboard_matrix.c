@@ -32,14 +32,8 @@ static bool debounced_matrix[MATRIX_ROWS][MATRIX_COLS];
 /* キー毎のデバウンスタイマー (変化検出時刻, 0=非アクティブ) */
 static uint32_t debounce_timer[MATRIX_ROWS][MATRIX_COLS];
 
-/* 状態変化フラグ */
+/* 状態変化フラグ (matrix_scan()でセット、matrix_has_changed()でクリア) */
 static bool state_changed;
-
-/* 前回のBootレポート (変化検出用) */
-static uint8_t prev_boot_report[BOOT_REPORT_SIZE];
-
-/* 前回のNKROレポート (変化検出用) */
-static uint8_t prev_nkro_report[NKRO_REPORT_SIZE];
 
 void matrix_init(void) {
     /* 行ピンを出力に設定、初期状態HIGH (非アクティブ) */
@@ -59,8 +53,6 @@ void matrix_init(void) {
     memset(raw_matrix, 0, sizeof(raw_matrix));
     memset(debounced_matrix, 0, sizeof(debounced_matrix));
     memset(debounce_timer, 0, sizeof(debounce_timer));
-    memset(prev_boot_report, 0, sizeof(prev_boot_report));
-    memset(prev_nkro_report, 0, sizeof(prev_nkro_report));
     state_changed = false;
 }
 
@@ -101,7 +93,11 @@ void matrix_scan(void) {
 }
 
 bool matrix_has_changed(void) {
-    return state_changed;
+    if (state_changed) {
+        state_changed = false;  /* 読み取り時にクリア (重複送信防止) */
+        return true;
+    }
+    return false;
 }
 
 void matrix_build_boot_report(uint8_t *report) {
@@ -132,14 +128,6 @@ void matrix_build_boot_report(uint8_t *report) {
 
     report[0] = modifier_byte;
     report[1] = 0x00;  /* Reserved */
-
-    /* 変化検出 */
-    if (memcmp(report, prev_boot_report, BOOT_REPORT_SIZE) != 0) {
-        memcpy(prev_boot_report, report, BOOT_REPORT_SIZE);
-        state_changed = true;
-    } else {
-        state_changed = false;
-    }
 }
 
 void matrix_build_nkro_report(uint8_t *report) {
@@ -172,14 +160,6 @@ void matrix_build_nkro_report(uint8_t *report) {
     }
 
     report[0] = modifier_byte;
-
-    /* 変化検出 */
-    if (memcmp(report, prev_nkro_report, NKRO_REPORT_SIZE) != 0) {
-        memcpy(prev_nkro_report, report, NKRO_REPORT_SIZE);
-        state_changed = true;
-    } else {
-        state_changed = false;
-    }
 }
 
 bool matrix_key_is_pressed(uint8_t row, uint8_t col) {

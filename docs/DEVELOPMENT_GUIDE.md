@@ -122,18 +122,10 @@ rm -rf * && cmake -G Ninja .. && ninja
 
 ### BLE デバイス名の変更
 
-ペアリング画面に表示されるデバイス名は **3箇所** で定義されている。
-全て同じ文字列に揃える必要がある。
+ペアリング画面に表示されるデバイス名は **2箇所** で定義されている。
+両方を同じ文字列に揃える必要がある。
 
-#### 1. プロジェクト設定ヘッダ
-
-ファイル: `include/project_config.h`
-
-```c
-#define DEVICE_NAME          "JP106 Keyboard"   // ← ここを変更
-```
-
-#### 2. GATT データベース
+#### 1. GATT データベース
 
 ファイル: `hog_keyboard.gatt`
 
@@ -142,7 +134,7 @@ CHARACTERISTIC, GAP_DEVICE_NAME, READ, "JP106 Keyboard"
                                         ^^^^^^^^^^^^^^ ← ここを変更
 ```
 
-#### 3. アドバタイジングデータ (バイト列)
+#### 2. アドバタイジングデータ (バイト列)
 
 ファイル: `src/ble_hid.c` の `adv_data[]` 配列
 
