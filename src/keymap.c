@@ -32,10 +32,10 @@ static const uint8_t keymap[MATRIX_ROWS][MATRIX_COLS] = {
         KC_LSHIFT, KEY_Z, KEY_X, KEY_C, KEY_V, KEY_B, KEY_N,
         KEY_M, KEY_COMMA, KEY_PERIOD, KEY_SLASH, KEY_JIS_BACKSLASH, KEY_UP, KC_RSHIFT
     },
-    /* Row 4: LCtrl, Win, LAlt, 無変換, Space, Fn, 変換, かな, RAlt, RCtrl, Left, Down, Right, (空) */
+    /* Row 4: LCtrl, Win, LAlt, 無変換, Fn(L), Space, Fn(R), 変換, かな, RAlt, RCtrl, Left, Down, Right */
     {
-        KC_LCTRL, KC_LGUI, KC_LALT, KEY_JIS_MUHENKAN, KEY_SPACE, KEY_FN,
-        KEY_JIS_HENKAN, KEY_JIS_KATAKANA, KC_RALT, KC_RCTRL, KEY_LEFT, KEY_DOWN, KEY_RIGHT, KEY_NONE
+        KC_LCTRL, KC_LGUI, KC_LALT, KEY_JIS_MUHENKAN, KEY_FN, KEY_SPACE, KEY_FN,
+        KEY_JIS_HENKAN, KEY_JIS_KATAKANA, KC_RALT, KC_RCTRL, KEY_LEFT, KEY_DOWN, KEY_RIGHT
     },
     /* Row 5: F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, Esc, (空) */
     {
